@@ -4,11 +4,17 @@ publish_to: 'none' # Remove esta linha se você quiser publicar o pacote
 version: 1.0.0+1
 
 environment:
-  sdk: ">=2.12.0 <3.0.0"
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
+  dio: 
+  get_it: 
+  go_router: 
+  flutter_dotenv: 
+  shared_preferences: 
+  flutter_secure_storage: 
 
 dev_dependencies:
   flutter_test:
