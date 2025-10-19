@@ -1,8 +1,0 @@
-{
-    "dart.lineLength": 120,
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2,
-    "files.autoSave": "onWindowChange",
-    "flutter.sdkPath": "/path/to/flutter/sdk",
-    "dart.flutterSdkPath": "/path/to/flutter/sdk"
-}
