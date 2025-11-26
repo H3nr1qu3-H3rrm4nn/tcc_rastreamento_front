@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // kIsWeb
+
 import 'auth_service.dart';
 import 'utils/app_logger.dart';
+
+// Telas web
 import 'screens/dashboard_screen.dart';
+import 'screens/history_screen.dart';
+import 'screens/vehicles_screen.dart';
+
+// Tela mobile
+import 'screens/tracking_screen.dart';
 
 void main() {
   runApp(const RastreamentoApp());
@@ -13,7 +22,7 @@ class RastreamentoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Rastreamento Mobile',
+      title: 'Rastreamento',
       theme: ThemeData(
         primarySwatch: Colors.indigo,
         useMaterial3: true,
@@ -74,16 +83,30 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
 
-        // Navegar para Dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DashboardScreen(
-              userName: _emailController.text.split('@')[0], // Nome temporário
+        final userName = _emailController.text.split('@')[0];
+
+        // Redireciona conforme plataforma
+        if (kIsWeb) {
+          // Web: vai para o dashboard
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(
+                userName: userName,
+              ),
             ),
-          ),
-        );
-        
+          );
+        } else {
+          // Mobile: vai para a tela de rastreamento
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TrackingScreen(
+                userName: userName,
+              ),
+            ),
+          );
+        }
       } else {
         AppLogger.warning('Login falhou - credenciais inválidas ou erro de conexão');
 
