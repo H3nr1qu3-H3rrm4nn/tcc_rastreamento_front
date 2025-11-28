@@ -1,56 +1,104 @@
 import 'package:flutter/material.dart';
+import '../auth_service.dart';
+import '../models/location_point.dart';
+import '../models/vehicle.dart';
 import '../utils/app_logger.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final int? userId;
+
+  const HistoryScreen({super.key, this.userId});
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  String _selectedVehicle = 'Caminhão A';
-  final List<String> _vehicles = [
-    'Caminhão A',
-    'Van B',
-    'Carro C',
-    'Moto D',
-  ];
+  final AuthService _authService = AuthService();
+  List<Vehicle> _vehicles = [];
+  int? _selectedVehicleId;
+  bool _loadingVehicles = true;
+  bool _loadingHistory = false;
+  String? _errorMessage;
+  List<LocationPoint> _history = [];
 
-  final List<Map<String, dynamic>> _historyData = [
-    {
-      'timestamp': '2025-10-25 14:30:00',
-      'localizacao': 'São Paulo, SP',
-      'latitude': -23.5505,
-      'longitude': -46.6333,
-      'velocidade': 65,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 14:15:00',
-      'localizacao': 'Guarulhos, SP',
-      'latitude': -23.4566,
-      'longitude': -46.4936,
-      'velocidade': 80,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 14:00:00',
-      'localizacao': 'Arujá, SP',
-      'latitude': -23.3439,
-      'longitude': -46.3569,
-      'velocidade': 90,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 13:30:00',
-      'localizacao': 'Campinas, SP',
-      'latitude': -22.9068,
-      'longitude': -47.0626,
-      'velocidade': 0,
-      'status': 'Parado',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadVehicles();
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userId != oldWidget.userId) {
+      _loadVehicles();
+    }
+  }
+
+  Future<void> _loadVehicles() async {
+    setState(() {
+      _loadingVehicles = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final cachedProfile = await _authService.getSavedUserProfile();
+      final userId = widget.userId ?? cachedProfile?.id;
+
+      if (userId == null) {
+        setState(() {
+          _errorMessage = 'Não foi possível identificar o usuário logado.';
+          _loadingVehicles = false;
+        });
+        return;
+      }
+
+      final vehicles = await _authService.fetchVehicles(userId: userId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _vehicles = vehicles;
+        _selectedVehicleId = vehicles.isNotEmpty ? vehicles.first.id : null;
+        _loadingVehicles = false;
+      });
+
+      if (_selectedVehicleId != null) {
+        _loadHistory(_selectedVehicleId!);
+      }
+    } catch (e, stack) {
+      AppLogger.error('Erro ao carregar veículos para histórico', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Não foi possível carregar os veículos.';
+        _loadingVehicles = false;
+      });
+    }
+  }
+
+  Future<void> _loadHistory(int vehicleId) async {
+    setState(() {
+      _loadingHistory = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final history = await _authService.fetchVehicleLocations(vehicleId);
+      if (!mounted) return;
+      setState(() {
+        _history = history;
+        _loadingHistory = false;
+      });
+    } catch (e, stack) {
+      AppLogger.error('Erro ao carregar histórico', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Não foi possível carregar o histórico.';
+        _loadingHistory = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,33 +131,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.white,
+          if (_loadingVehicles)
+            const Center(child: CircularProgressIndicator())
+          else if (_vehicles.isEmpty)
+            const Text('Nenhum veículo disponível para exibir o histórico.')
+          else
+            Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
+              ),
+              child: DropdownButton<int>(
+                value: _selectedVehicleId,
+                isExpanded: true,
+                underline: const SizedBox(),
+                items: _vehicles.map((vehicle) {
+                  return DropdownMenuItem<int>(
+                    value: vehicle.id,
+                    child: Text(vehicle.displayName),
+                  );
+                }).toList(),
+                onChanged: (int? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedVehicleId = newValue;
+                    });
+                    _loadHistory(newValue);
+                    AppLogger.info('Veículo selecionado para histórico: $newValue');
+                  }
+                },
+              ),
             ),
-            child: DropdownButton<String>(
-              value: _selectedVehicle,
-              isExpanded: true,
-              underline: const SizedBox(),
-              items: _vehicles.map((vehicle) {
-                return DropdownMenuItem<String>(
-                  value: vehicle,
-                  child: Text(vehicle),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null) {
-                  setState(() {
-                    _selectedVehicle = newValue;
-                  });
-                  AppLogger.info('Veículo selecionado para histórico: $newValue');
-                }
-              },
-            ),
-          ),
           const SizedBox(height: 24),
           const Text(
             'Últimas localizações:',
@@ -119,23 +173,49 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _historyData.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final record = _historyData[index];
-              return _buildHistoryCard(record, index);
-            },
-          ),
+          if (_loadingHistory)
+            const Center(child: CircularProgressIndicator())
+          else if (_errorMessage != null)
+            Column(
+              children: [
+                Text(
+                  _errorMessage!,
+                  style: const TextStyle(fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (_selectedVehicleId != null) {
+                      _loadHistory(_selectedVehicleId!);
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tentar novamente'),
+                ),
+              ],
+            )
+          else if (_history.isEmpty)
+            const Text('Nenhum registro encontrado para o período selecionado.')
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _history.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final record = _history[index];
+                return _buildHistoryCard(record, index);
+              },
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryCard(Map<String, dynamic> record, int index) {
-    final statusColor = record['status'] == 'Em movimento' ? Colors.green : Colors.orange;
+  Widget _buildHistoryCard(LocationPoint record, int index) {
+    final isMoving = (record.velocity ?? 0) > 0;
+    final statusColor = isMoving ? Colors.green : Colors.orange;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -155,7 +235,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.indigo.withOpacity(0.1),
+                      color: Colors.indigo.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -172,14 +252,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        record['timestamp'],
+                        record.formattedTimestamp,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       Text(
-                        'Lat: ${record['latitude'].toStringAsFixed(4)}, Long: ${record['longitude'].toStringAsFixed(4)}',
+                        'Lat: ${record.latitude.toStringAsFixed(4)}, Long: ${record.longitude.toStringAsFixed(4)}',
                         style: TextStyle(
                           fontSize: 10,
                           color: Colors.grey[600],
@@ -192,11 +272,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  record['status'],
+                  record.status ?? (isMoving ? 'Em movimento' : 'Parado'),
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
@@ -213,7 +293,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  record['localizacao'],
+                  record.localizacao ?? 'Localização não informada',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[700],
@@ -225,7 +305,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Icon(Icons.speed, size: 14, color: Colors.grey[600]),
               const SizedBox(width: 4),
               Text(
-                '${record['velocidade']} km/h',
+                '${record.velocity?.toStringAsFixed(1) ?? '0'} km/h',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,

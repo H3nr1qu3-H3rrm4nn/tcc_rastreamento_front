@@ -1,43 +1,72 @@
 import 'package:flutter/material.dart';
+import '../auth_service.dart';
+import '../models/vehicle.dart';
 import '../utils/app_logger.dart';
 
 class VehiclesScreen extends StatefulWidget {
-  const VehiclesScreen({super.key});
+  final int? userId;
+
+  const VehiclesScreen({super.key, this.userId});
 
   @override
   State<VehiclesScreen> createState() => _VehiclesScreenState();
 }
 
 class _VehiclesScreenState extends State<VehiclesScreen> {
-  final List<Map<String, dynamic>> _vehicles = [
-    {
-      'id': 1,
-      'name': 'Caminhão A',
-      'placa': 'ABC-1234',
-      'tipo': 'Caminhão',
-      'status': 'Online',
-      'localizacao': 'São Paulo, SP',
-      'motorista': 'João Silva',
-    },
-    {
-      'id': 2,
-      'name': 'Van B',
-      'placa': 'XYZ-5678',
-      'tipo': 'Van',
-      'status': 'Offline',
-      'localizacao': 'Rio de Janeiro, RJ',
-      'motorista': 'Maria Santos',
-    },
-    {
-      'id': 3,
-      'name': 'Carro C',
-      'placa': 'DEF-9012',
-      'tipo': 'Carro',
-      'status': 'Online',
-      'localizacao': 'Belo Horizonte, MG',
-      'motorista': 'Pedro Oliveira',
-    },
-  ];
+  final AuthService _authService = AuthService();
+  List<Vehicle> _vehicles = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVehicles();
+  }
+
+  @override
+  void didUpdateWidget(covariant VehiclesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userId != oldWidget.userId) {
+      _loadVehicles();
+    }
+  }
+
+  Future<void> _loadVehicles() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final cachedProfile = await _authService.getSavedUserProfile();
+      final userId = widget.userId ?? cachedProfile?.id;
+
+      if (userId == null) {
+        setState(() {
+          _errorMessage = 'Não foi possível identificar o usuário logado.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final vehicles = await _authService.fetchVehicles(userId: userId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _vehicles = vehicles;
+        _isLoading = false;
+      });
+    } catch (e, stack) {
+      AppLogger.error('Erro ao carregar veículos', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Não foi possível carregar os veículos.';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,23 +105,44 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _vehicles.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final vehicle = _vehicles[index];
-              return _buildVehicleCard(vehicle);
-            },
-          ),
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (_errorMessage != null)
+            Column(
+              children: [
+                Text(
+                  _errorMessage!,
+                  style: const TextStyle(fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _loadVehicles,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tentar novamente'),
+                ),
+              ],
+            )
+          else if (_vehicles.isEmpty)
+            const Text('Nenhum veículo encontrado para este usuário.')
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _vehicles.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final vehicle = _vehicles[index];
+                return _buildVehicleCard(vehicle);
+              },
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildVehicleCard(Map<String, dynamic> vehicle) {
-    final isOnline = vehicle['status'] == 'Online';
+  Widget _buildVehicleCard(Vehicle vehicle) {
+    final isOnline = vehicle.isOnline;
     final statusColor = isOnline ? Colors.green : Colors.grey;
 
     return Container(
@@ -113,7 +163,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      vehicle['name'],
+                      vehicle.displayName,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -121,7 +171,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Placa: ${vehicle['placa']}',
+                      'Placa: ${vehicle.plate}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -133,11 +183,11 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  vehicle['status'],
+                  isOnline ? 'Online' : 'Offline',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -151,29 +201,43 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildInfoItem(Icons.local_shipping, 'Tipo', vehicle['tipo']),
+                child: _buildInfoItem(Icons.local_shipping, 'Tipo', vehicle.type),
               ),
               Expanded(
-                child: _buildInfoItem(Icons.location_on, 'Local', vehicle['localizacao']),
+                child: _buildInfoItem(
+                  Icons.location_on,
+                  'Local',
+                  vehicle.lastLocation ?? 'Sem registro',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          _buildInfoItem(Icons.person, 'Motorista', vehicle['motorista']),
+          _buildInfoItem(
+            Icons.place,
+            'Último local',
+            vehicle.lastLocation ?? 'Sem registro',
+          ),
+          const SizedBox(height: 4),
+          _buildInfoItem(
+            Icons.speed,
+            'Velocidade',
+            '${vehicle.currentVelocity?.toStringAsFixed(1) ?? '0'} km/h',
+          ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton.icon(
                 onPressed: () {
-                  AppLogger.info('Visualizar detalhes do veículo: ${vehicle['name']}');
+                  AppLogger.info('Visualizar detalhes do veículo: ${vehicle.displayName}');
                 },
                 icon: const Icon(Icons.visibility),
                 label: const Text('Detalhes'),
               ),
               TextButton.icon(
                 onPressed: () {
-                  AppLogger.info('Editar veículo: ${vehicle['name']}');
+                  AppLogger.info('Editar veículo: ${vehicle.displayName}');
                 },
                 icon: const Icon(Icons.edit),
                 label: const Text('Editar'),

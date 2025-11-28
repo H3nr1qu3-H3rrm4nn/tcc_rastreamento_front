@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../auth_service.dart';
 import '../utils/app_logger.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String userName;
   final int selectedIndex;
   final Function(int) onMenuItemSelected;
+  static final AuthService _authService = AuthService();
 
   const CustomAppBar({
     super.key,
@@ -30,9 +32,14 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).popUntil((route) => route.isFirst);
-              Navigator.pushReplacementNamed(context, '/');
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              navigator.pop();
+              await _authService.removeToken();
+              navigator.pushNamedAndRemoveUntil(
+                '/login',
+                (route) => false,
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -51,7 +58,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),

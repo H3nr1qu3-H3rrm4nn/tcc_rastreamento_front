@@ -1,0 +1,51 @@
+class LocationPoint {
+  final int vehicleId;
+  final double latitude;
+  final double longitude;
+  final double? velocity;
+  final String? status;
+  final String? localizacao;
+  final DateTime timestamp;
+
+  LocationPoint({
+    required this.vehicleId,
+    required this.latitude,
+    required this.longitude,
+    required this.timestamp,
+    this.velocity,
+    this.status,
+    this.localizacao,
+  });
+
+  factory LocationPoint.fromJson(Map<String, dynamic> json) {
+    final source = json['object'] is Map<String, dynamic>
+        ? json['object'] as Map<String, dynamic>
+        : json;
+
+    double? toDoubleValue(dynamic value) {
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      return double.tryParse(value.toString());
+    }
+
+    DateTime parseDateValue(dynamic value) {
+      if (value is DateTime) return value;
+      if (value is String) {
+        return DateTime.tryParse(value) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
+    return LocationPoint(
+      vehicleId: source['vehicle_id'] ?? source['id'] ?? 0,
+      latitude: toDoubleValue(source['latitude']) ?? 0,
+      longitude: toDoubleValue(source['longitude']) ?? 0,
+      velocity: toDoubleValue(source['velocity'] ?? source['velocidade']),
+      status: source['status'],
+      localizacao: source['localizacao'] ?? source['last_location'],
+      timestamp: parseDateValue(source['timestamp']),
+    );
+  }
+
+  String get formattedTimestamp => timestamp.toLocal().toString().split('.').first;
+}
