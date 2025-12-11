@@ -3,16 +3,22 @@ import 'package:flutter/foundation.dart'; // kIsWeb
 
 import 'auth_service.dart';
 import 'utils/app_logger.dart';
+import 'config/app_config.dart';
+import 'utils/map_initializer.dart';
 
 // Telas web
 import 'screens/dashboard_screen.dart';
-import 'screens/history_screen.dart';
-import 'screens/vehicles_screen.dart';
 
 // Tela mobile
 import 'screens/tracking_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (kIsWeb && googleMapsApiKey.isNotEmpty) {
+    await ensureGoogleMapsScript(googleMapsApiKey);
+  }
+
   runApp(const RastreamentoApp());
 }
 
@@ -27,6 +33,9 @@ class RastreamentoApp extends StatelessWidget {
         primarySwatch: Colors.indigo,
         useMaterial3: true,
       ),
+      routes: {
+        '/login': (context) => const LoginPage(),
+      },
       home: const LoginPage(),
       debugShowCheckedModeBanner: false,
     );
@@ -72,8 +81,14 @@ class _LoginPageState extends State<LoginPage> {
 
       if (token != null) {
         await _authService.saveToken(token);
+        final profile = await _authService.fetchCurrentUser();
+        final fallbackName = _emailController.text.split('@').first;
+        final displayName = profile?.displayName ?? fallbackName;
+        final userId = profile?.id;
 
-        AppLogger.info('Login bem-sucedido, token salvo');
+        AppLogger.info('Login bem-sucedido, token salvo e perfil carregado');
+
+        if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -83,26 +98,23 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
 
-        final userName = _emailController.text.split('@')[0];
-
-        // Redireciona conforme plataforma
         if (kIsWeb) {
-          // Web: vai para o dashboard
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => DashboardScreen(
-                userName: userName,
+                userName: displayName,
+                userId: userId,
               ),
             ),
           );
         } else {
-          // Mobile: vai para a tela de rastreamento
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => TrackingScreen(
-                userName: userName,
+                userName: displayName,
+                userId: userId,
               ),
             ),
           );

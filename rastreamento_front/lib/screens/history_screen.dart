@@ -1,60 +1,134 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../auth_service.dart';
+import '../models/location_point.dart';
+import '../models/vehicle.dart';
 import '../utils/app_logger.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final int? userId;
+
+  const HistoryScreen({super.key, this.userId});
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  String _selectedVehicle = 'Caminhão A';
-  final List<String> _vehicles = [
-    'Caminhão A',
-    'Van B',
-    'Carro C',
-    'Moto D',
-  ];
+  final AuthService _authService = AuthService();
+  List<Vehicle> _vehicles = [];
+  int? _selectedVehicleId;
+  bool _loadingVehicles = true;
+  bool _loadingHistory = false;
+  String? _errorMessage;
+  List<LocationPoint> _history = [];
 
-  final List<Map<String, dynamic>> _historyData = [
-    {
-      'timestamp': '2025-10-25 14:30:00',
-      'localizacao': 'São Paulo, SP',
-      'latitude': -23.5505,
-      'longitude': -46.6333,
-      'velocidade': 65,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 14:15:00',
-      'localizacao': 'Guarulhos, SP',
-      'latitude': -23.4566,
-      'longitude': -46.4936,
-      'velocidade': 80,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 14:00:00',
-      'localizacao': 'Arujá, SP',
-      'latitude': -23.3439,
-      'longitude': -46.3569,
-      'velocidade': 90,
-      'status': 'Em movimento',
-    },
-    {
-      'timestamp': '2025-10-25 13:30:00',
-      'localizacao': 'Campinas, SP',
-      'latitude': -22.9068,
-      'longitude': -47.0626,
-      'velocidade': 0,
-      'status': 'Parado',
-    },
-  ];
+  GoogleMapController? _mapController;
+  static const CameraPosition _defaultCamera = CameraPosition(
+    target: LatLng(-23.5505, -46.6333),
+    zoom: 12,
+  );
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
+
+  DateTime? _startDateTime;
+  DateTime? _endDateTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVehicles();
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userId != oldWidget.userId) {
+      _loadVehicles();
+    }
+  }
+
+  Future<void> _loadVehicles() async {
+    setState(() {
+      _loadingVehicles = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final cachedProfile = await _authService.getSavedUserProfile();
+      final userId = widget.userId ?? cachedProfile?.id;
+
+      if (userId == null) {
+        setState(() {
+          _errorMessage = 'Não foi possível identificar o usuário logado.';
+          _loadingVehicles = false;
+        });
+        return;
+      }
+
+      final vehicles = await _authService.fetchVehicles(userId: userId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _vehicles = vehicles;
+        _selectedVehicleId = vehicles.isNotEmpty ? vehicles.first.id : null;
+        _loadingVehicles = false;
+      });
+
+      if (_selectedVehicleId != null) {
+        _loadHistory(_selectedVehicleId!);
+      }
+    } catch (e, stack) {
+      AppLogger.error('Erro ao carregar veículos para histórico', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Não foi possível carregar os veículos.';
+        _loadingVehicles = false;
+      });
+    }
+  }
+
+  Future<void> _loadHistory(int vehicleId) async {
+    setState(() {
+      _loadingHistory = true;
+      _errorMessage = null;
+    });
+
+    try {
+        final start = _startDateTime;
+        final end = _endDateTime;
+
+        // If both start and end are set, call the backend range endpoint.
+        final history = (start != null && end != null)
+          ? await _authService.fetchVehicleLocationsInRange(vehicleId, start, end)
+          : await _authService.fetchVehicleLocations(vehicleId);
+
+        final filtered = history;
+
+      if (!mounted) return;
+      setState(() {
+        _history = filtered;
+        _loadingHistory = false;
+      });
+
+      _updateMapFromHistory();
+    } catch (e, stack) {
+      AppLogger.error('Erro ao carregar histórico', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Não foi possível carregar o histórico.';
+        _loadingHistory = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,173 +142,321 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Visualize o histórico de localização dos veículos',
+            'Visualize o trajeto dos veículos em um período',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
             ),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Selecione um veículo:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildMap(),
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 320,
+                  child: _buildSidebar(),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.white,
-            ),
-            child: DropdownButton<String>(
-              value: _selectedVehicle,
-              isExpanded: true,
-              underline: const SizedBox(),
-              items: _vehicles.map((vehicle) {
-                return DropdownMenuItem<String>(
-                  value: vehicle,
-                  child: Text(vehicle),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null) {
-                  setState(() {
-                    _selectedVehicle = newValue;
-                  });
-                  AppLogger.info('Veículo selecionado para histórico: $newValue');
-                }
-              },
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Últimas localizações:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _historyData.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final record = _historyData[index];
-              return _buildHistoryCard(record, index);
-            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryCard(Map<String, dynamic> record, int index) {
-    final statusColor = record['status'] == 'Em movimento' ? Colors.green : Colors.orange;
+  Widget _buildMap() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: _defaultCamera,
+            polylines: _polylines,
+            markers: _markers,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: true,
+            onMapCreated: (controller) {
+              _mapController = controller;
+              if (_history.isNotEmpty) {
+                unawaited(Future.microtask(_fitMapToHistory));
+              }
+            },
+          ),
+          if (_loadingHistory)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black12,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          if (_history.isEmpty && !_loadingHistory)
+            Positioned.fill(
+              child: Center(
+                child: Text(
+                  'Nenhum trajeto para o período selecionado.',
+                  style: TextStyle(color: Colors.grey[700]),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildSidebar() {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[300]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.indigo.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '#${index + 1}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        record['timestamp'],
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Lat: ${record['latitude'].toStringAsFixed(4)}, Long: ${record['longitude'].toStringAsFixed(4)}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+          const Text(
+            'Filtros',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Veículo',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
+          if (_loadingVehicles)
+            const Center(child: CircularProgressIndicator())
+          else if (_vehicles.isEmpty)
+            const Text('Nenhum veículo disponível.')
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  record['status'],
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
-                  ),
-                ),
+              child: DropdownButton<int>(
+                value: _selectedVehicleId,
+                isExpanded: true,
+                underline: const SizedBox(),
+                items: _vehicles.map((vehicle) {
+                  return DropdownMenuItem<int>(
+                    value: vehicle.id,
+                    child: Text(vehicle.displayName),
+                  );
+                }).toList(),
+                onChanged: (int? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedVehicleId = newValue;
+                    });
+                  }
+                },
               ),
-            ],
+            ),
+          const SizedBox(height: 16),
+          const Text(
+            'Período',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[600]),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  record['localizacao'],
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[700],
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.speed, size: 14, color: Colors.grey[600]),
-              const SizedBox(width: 4),
-              Text(
-                '${record['velocidade']} km/h',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ],
+          _buildDateTimeField(
+            label: 'Início',
+            value: _startDateTime,
+            onChanged: (dt) => setState(() => _startDateTime = dt),
           ),
+          const SizedBox(height: 8),
+          _buildDateTimeField(
+            label: 'Fim',
+            value: _endDateTime,
+            onChanged: (dt) => setState(() => _endDateTime = dt),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _onApplyFilters,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Visualizar trajeto'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_errorMessage != null)
+            Text(
+              _errorMessage!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDateTimeField({
+    required String label,
+    required DateTime? value,
+    required ValueChanged<DateTime?> onChanged,
+  }) {
+    final text = value == null
+        ? 'Selecionar $label'
+        : '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year} '
+            '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+    return InkWell(
+      onTap: () async {
+        final now = DateTime.now();
+        final initialDate = value ?? now;
+        final date = await showDatePicker(
+          context: context,
+          initialDate: initialDate,
+          firstDate: DateTime(now.year - 1),
+          lastDate: DateTime(now.year + 1),
+        );
+        if (!mounted || date == null) return;
+
+        final time = await showTimePicker(
+          context: context,
+          initialTime: TimeOfDay.fromDateTime(initialDate),
+        );
+        if (!mounted || time == null) return;
+
+        final result = DateTime(
+          date.year,
+          date.month,
+          date.day,
+          time.hour,
+          time.minute,
+        );
+        onChanged(result);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_today, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onApplyFilters() {
+    if (_selectedVehicleId == null) {
+      setState(() {
+        _errorMessage = 'Selecione um veículo.';
+      });
+      return;
+    }
+    if (_startDateTime == null || _endDateTime == null) {
+      setState(() {
+        _errorMessage = 'Informe o período de início e fim.';
+      });
+      return;
+    }
+    if (_endDateTime!.isBefore(_startDateTime!)) {
+      setState(() {
+        _errorMessage = 'Data de fim não pode ser anterior ao início.';
+      });
+      return;
+    }
+
+    setState(() {
+      _errorMessage = null;
+    });
+
+    _loadHistory(_selectedVehicleId!);
+  }
+
+  void _updateMapFromHistory() {
+    if (_history.isEmpty) {
+      setState(() {
+        _polylines = {};
+        _markers = {};
+      });
+      return;
+    }
+
+    final points = _history
+        .map((h) => LatLng(h.latitude, h.longitude))
+        .toList();
+
+    final polyline = Polyline(
+      polylineId: const PolylineId('route'),
+      points: points,
+      color: Colors.indigo,
+      width: 4,
+    );
+
+    final start = points.first;
+    final end = points.last;
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('start'),
+        position: start,
+        infoWindow: const InfoWindow(title: 'Início'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+      ),
+      Marker(
+        markerId: const MarkerId('end'),
+        position: end,
+        infoWindow: const InfoWindow(title: 'Fim'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+    };
+
+    setState(() {
+      _polylines = {polyline};
+      _markers = markers;
+    });
+
+    _fitMapToHistory();
+  }
+
+  void _fitMapToHistory() {
+    if (_mapController == null || _history.isEmpty) return;
+
+    final points = _history
+        .map((h) => LatLng(h.latitude, h.longitude))
+        .toList();
+    double south = points.first.latitude;
+    double north = points.first.latitude;
+    double west = points.first.longitude;
+    double east = points.first.longitude;
+
+    for (final p in points) {
+      if (p.latitude < south) south = p.latitude;
+      if (p.latitude > north) north = p.latitude;
+      if (p.longitude < west) west = p.longitude;
+      if (p.longitude > east) east = p.longitude;
+    }
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(south, west),
+      northeast: LatLng(north, east),
+    );
+
+    unawaited(
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 60),
       ),
     );
   }
