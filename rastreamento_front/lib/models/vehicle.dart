@@ -2,6 +2,7 @@ class Vehicle {
   final int id;
   final String plate;
   final String type;
+  final String? name;
   final bool isOnline;
   final String? lastLocation;
   final String? driverName;
@@ -12,6 +13,7 @@ class Vehicle {
     required this.id,
     required this.plate,
     required this.type,
+    this.name,
     required this.isOnline,
     this.lastLocation,
     this.driverName,
@@ -28,6 +30,7 @@ class Vehicle {
       id: source['id'] ?? source['vehicle_id'] ?? 0,
       plate: (source['plate'] ?? source['placa'] ?? '').toString(),
       type: (source['type'] ?? source['tipo'] ?? 'Veículo').toString(),
+      name: (source['name'] ?? source['nome'])?.toString(),
       isOnline: source['is_online'] ?? source['online'] ?? false,
       lastLocation: source['last_location'] ?? source['localizacao'],
       driverName: source['driver_name'] ?? source['motorista'],
@@ -44,6 +47,7 @@ class Vehicle {
     int? id,
     String? plate,
     String? type,
+    String? name,
     bool? isOnline,
     String? lastLocation,
     String? driverName,
@@ -54,6 +58,7 @@ class Vehicle {
       id: id ?? this.id,
       plate: plate ?? this.plate,
       type: type ?? this.type,
+      name: name ?? this.name,
       isOnline: isOnline ?? this.isOnline,
       lastLocation: lastLocation ?? this.lastLocation,
       driverName: driverName ?? this.driverName,
@@ -62,5 +67,8 @@ class Vehicle {
     );
   }
 
-  String get displayName => '$type - $plate';
+  String get displayName {
+    final baseName = (name != null && name!.isNotEmpty) ? name! : type;
+    return '$baseName - $plate';
+  }
 }

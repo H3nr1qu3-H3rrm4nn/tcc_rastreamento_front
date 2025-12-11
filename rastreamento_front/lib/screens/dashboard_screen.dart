@@ -305,7 +305,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Execute o build com --dart-define=GOOGLE_MAPS_API_KEY=SEU_TOKEN para habilitar o mapa na web.',
+              'Informe GOOGLE_MAPS_API_KEY via --dart-define ou arquivo .env para habilitar o mapa na versão web.',
               style: TextStyle(color: Colors.grey[600], fontSize: 13),
               textAlign: TextAlign.center,
             ),
