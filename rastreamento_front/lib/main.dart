@@ -85,6 +85,7 @@ class _LoginPageState extends State<LoginPage> {
         final fallbackName = _emailController.text.split('@').first;
         final displayName = profile?.displayName ?? fallbackName;
         final userId = profile?.id;
+        final isAdmin = profile?.isAdmin ?? false;
 
         AppLogger.info('Login bem-sucedido, token salvo e perfil carregado');
 
@@ -105,6 +106,7 @@ class _LoginPageState extends State<LoginPage> {
               builder: (context) => DashboardScreen(
                 userName: displayName,
                 userId: userId,
+                isAdmin: isAdmin,
               ),
             ),
           );

@@ -6,6 +6,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String userName;
   final int selectedIndex;
   final Function(int) onMenuItemSelected;
+  final bool isAdmin;
   static final AuthService _authService = AuthService();
 
   const CustomAppBar({
@@ -13,6 +14,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.userName,
     required this.selectedIndex,
     required this.onMenuItemSelected,
+    required this.isAdmin,
   });
 
   @override
@@ -90,6 +92,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
               _buildMenuItem('Dashboard', 0),
               _buildMenuItem('Veículos', 1),
               _buildMenuItem('Histórico', 2),
+              if (isAdmin) _buildMenuItem('Usuários', 3),
 
               const Spacer(),
 

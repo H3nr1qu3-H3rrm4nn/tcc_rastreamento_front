@@ -14,16 +14,19 @@ import '../widgets/app_bar_custom.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/vehicle_list_item.dart';
 import 'history_screen.dart';
+import 'user_management_screen.dart';
 import 'vehicles_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String userName;
   final int? userId;
+  final bool isAdmin;
 
   const DashboardScreen({
     super.key,
     required this.userName,
     this.userId,
+    required this.isAdmin,
   });
 
   @override
@@ -44,6 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   GoogleMapController? _mapController;
   Timer? _positionRefreshTimer;
   bool _loadingPositions = false;
+  bool _isAdmin = false;
 
   static const CameraPosition _defaultCameraPosition = CameraPosition(
     target: LatLng(-23.5505, -46.6333),
@@ -72,6 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final cachedProfile = await _authService.getSavedUserProfile();
       final userId = widget.userId ?? cachedProfile?.id;
+      _isAdmin = cachedProfile?.isAdmin ?? widget.isAdmin;
       if (userId == null) {
         setState(() {
           _errorMessage = 'Não foi possível identificar o usuário logado.';
@@ -89,6 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _resolvedUserId = userId;
         _vehicles = vehicles;
         _stats = stats;
+        _isAdmin = cachedProfile?.isAdmin ?? widget.isAdmin;
         _isLoading = false;
       });
 
@@ -316,6 +322,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _onMenuItemSelected(int index) {
+    if (index == 3 && !_isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aba disponível apenas para administradores.')),
+      );
+      return;
+    }
+
     setState(() {
       _selectedIndex = index;
     });
@@ -331,6 +344,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return VehiclesScreen(userId: _resolvedUserId);
       case 2:
         return HistoryScreen(userId: _resolvedUserId);
+      case 3:
+        return const UserManagementScreen();
       default:
         return _buildDashboard();
     }
@@ -546,6 +561,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         userName: widget.userName,
         selectedIndex: _selectedIndex,
         onMenuItemSelected: _onMenuItemSelected,
+        isAdmin: _isAdmin,
       ),
       body: _buildCurrentScreen(),
     );

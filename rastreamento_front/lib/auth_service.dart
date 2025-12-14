@@ -523,6 +523,103 @@ class AuthService {
         .toList();
   }
 
+  Future<UserProfile?> createUser({
+    required String email,
+    required String password,
+    String? name,
+    bool isAdmin = false,
+    String? imageSrc,
+  }) async {
+    final response = await authenticatedPost('/user/save', {
+      'email': email,
+      'password': password,
+      if (name != null) 'name': name,
+      'is_admin': isAdmin,
+      if (imageSrc != null) 'image_src': imageSrc,
+    });
+
+    if (response == null || response.statusCode != 200) {
+      AppLogger.warning('Falha ao criar usuário: ${response?.statusCode}');
+      return null;
+    }
+
+    final body = _extractBody(response.body);
+    if (!_isSuccess(body)) {
+      AppLogger.warning('Falha lógica ao criar usuário: ${body['message']}');
+      return null;
+    }
+
+    final data = _dataFromBody(body);
+    if (data is Map<String, dynamic>) {
+      return UserProfile.fromJson(data);
+    }
+
+    AppLogger.warning('Resposta inesperada ao criar usuário: ${response.body}');
+    return null;
+  }
+
+  Future<UserProfile?> updateUser({
+    required int id,
+    String? email,
+    String? password,
+    String? name,
+    bool? isAdmin,
+    String? imageSrc,
+  }) async {
+    final body = <String, dynamic>{};
+    if (email != null) body['email'] = email;
+    if (password != null && password.isNotEmpty) body['password'] = password;
+    if (name != null) body['name'] = name;
+    if (isAdmin != null) body['is_admin'] = isAdmin;
+    if (imageSrc != null) body['image_src'] = imageSrc;
+
+    if (body.isEmpty) {
+      AppLogger.warning('Nenhum campo fornecido para atualizar o usuário $id');
+      return null;
+    }
+
+    final response = await authenticatedPut('/user/update_by_id/$id', body);
+
+    if (response == null || response.statusCode != 200) {
+      AppLogger.warning('Falha ao atualizar usuário: ${response?.statusCode}');
+      return null;
+    }
+
+    final responseBody = _extractBody(response.body);
+    if (!_isSuccess(responseBody)) {
+      AppLogger.warning('Falha lógica ao atualizar usuário: ${responseBody['message']}');
+      return null;
+    }
+
+    final data = _dataFromBody(responseBody);
+    if (data is Map<String, dynamic>) {
+      return UserProfile.fromJson(data);
+    }
+
+    AppLogger.warning('Resposta inesperada ao atualizar usuário: ${response.body}');
+    return null;
+  }
+
+  Future<bool> deleteUser(int id) async {
+    final response = await authenticatedDelete('/user/delete_by_id/$id');
+    if (response == null) {
+      return false;
+    }
+
+    if (response.statusCode != 200) {
+      AppLogger.warning('Falha ao excluir usuário: ${response.statusCode}');
+      return false;
+    }
+
+    final body = _extractBody(response.body);
+    if (!_isSuccess(body)) {
+      AppLogger.warning('Falha lógica ao excluir usuário: ${body['message']}');
+      return false;
+    }
+
+    return true;
+  }
+
   Future<List<LocationPoint>> fetchVehicleLocations(int vehicleId) async {
     final response = await authenticatedGet('/location/list_by_vehicle_id/$vehicleId');
     if (response == null || response.statusCode != 200) {
