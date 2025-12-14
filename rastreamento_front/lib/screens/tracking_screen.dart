@@ -10,6 +10,14 @@ import '../auth_service.dart';
 import '../models/vehicle.dart';
 import '../utils/app_logger.dart';
 
+enum _TrackingStatus {
+  idle,
+  connecting,
+  streaming,
+  reconnecting,
+  error,
+}
+
 class TrackingScreen extends StatefulWidget {
   final String userName;
   final int? userId;
@@ -37,7 +45,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription? _socketSubscription;
   WebSocketChannel? _channel;
-  bool _socketClosedByClient = false;
+  _TrackingStatus _trackingStatus = _TrackingStatus.idle;
+  Timer? _reconnectTimer;
+  bool _userRequestedStop = false;
+  String? _authToken;
 
   final AuthService _authService = AuthService();
   late final Uri _socketUri;
@@ -47,6 +58,116 @@ class _TrackingScreenState extends State<TrackingScreen> {
     super.initState();
     _socketUri = Uri.parse('${_authService.websocketBaseUrl}/location/websocket');
     _loadVehicles();
+  }
+
+  Future<void> _ensurePositionStream() async {
+    if (_positionSubscription != null) {
+      return;
+    }
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    ).listen(
+      (Position position) {
+        _sendLocation(position);
+      },
+      onError: (error) {
+        AppLogger.error('Erro no stream de localização', error);
+        if (!mounted) return;
+        setState(() {
+          _statusMessage = 'Erro ao obter localização: $error';
+          _trackingStatus = _TrackingStatus.error;
+        });
+      },
+    );
+  }
+
+  Future<void> _initializeSocket({required bool isReconnect}) async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
+    final token = _authToken ?? await _authService.getToken();
+    if (token == null) {
+      await _stopTracking(
+        statusMessage: 'Token não encontrado. Faça login novamente.',
+      );
+      return;
+    }
+    _authToken = token;
+
+    try {
+      await _socketSubscription?.cancel();
+    } catch (_) {}
+    _socketSubscription = null;
+
+    if (_channel != null) {
+      try {
+        await _channel?.sink.close();
+      } catch (_) {}
+    }
+    _channel = null;
+
+    if (!mounted || _userRequestedStop) {
+      return;
+    }
+
+    setState(() {
+      _trackingStatus =
+          isReconnect ? _TrackingStatus.reconnecting : _TrackingStatus.connecting;
+      _statusMessage = isReconnect
+          ? 'Tentando reconectar...'
+          : 'Estabelecendo conexão e preparando o envio...';
+    });
+
+    try {
+      final channel = IOWebSocketChannel.connect(
+        _socketUri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      );
+
+      _channel = channel;
+
+      _socketSubscription = channel.stream.listen(
+        _handleSocketEvent,
+        onDone: () {
+          AppLogger.warning('WebSocket encerrado pelo servidor');
+          _handleConnectionLoss('Conexão encerrada pelo servidor.');
+        },
+        onError: (error, stack) {
+          AppLogger.error('Erro no canal WebSocket', error, stack);
+          _handleConnectionLoss('Erro na conexão: $error');
+        },
+        cancelOnError: true,
+      );
+
+      channel.sink.add(jsonEncode({'type': 'auth', 'token': token}));
+
+      if (!mounted || _userRequestedStop) {
+        return;
+      }
+
+      setState(() {
+        _trackingStatus = _TrackingStatus.streaming;
+        _statusMessage = 'Enviando localização para a plataforma web...';
+      });
+
+      if (isReconnect) {
+        AppLogger.info('Reconexão estabelecida para veículo $_vehicleId');
+      } else {
+        AppLogger.info('Rastreamento iniciado para veículo $_vehicleId');
+      }
+    } catch (e, stack) {
+      AppLogger.error('Erro ao abrir WebSocket', e, stack);
+      _handleConnectionLoss('Erro ao conectar: $e');
+    }
   }
 
   @override
@@ -167,22 +288,32 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 
   Future<void> _startTracking() async {
+    if (_isTracking) {
+      return;
+    }
+
     if (_vehicleId == null) {
       setState(() {
         _statusMessage = 'Nenhum veículo vinculado ao rastreador.';
+        _trackingStatus = _TrackingStatus.error;
       });
       return;
     }
 
     setState(() {
       _isTracking = true;
-      _statusMessage = 'Estabelecendo conexão e preparando o envio...';
+      _userRequestedStop = false;
+      _trackingStatus = _TrackingStatus.connecting;
+      _statusMessage = 'Verificando permissões de localização.';
     });
 
     final hasPermission = await _checkAndRequestLocationPermission();
     if (!hasPermission) {
+      if (!mounted) return;
       setState(() {
         _isTracking = false;
+        _trackingStatus = _TrackingStatus.idle;
+        _statusMessage = 'Permissão necessária para iniciar o rastreamento.';
       });
       return;
     }
@@ -190,83 +321,33 @@ class _TrackingScreenState extends State<TrackingScreen> {
     try {
       final token = await _authService.getToken();
       if (token == null) {
+        if (!mounted) return;
         setState(() {
-          _statusMessage = 'Token não encontrado. Faça login novamente.';
           _isTracking = false;
+          _trackingStatus = _TrackingStatus.idle;
+          _statusMessage = 'Token não encontrado. Faça login novamente.';
         });
         return;
       }
 
-      // Abre conexão WebSocket
-      _channel = IOWebSocketChannel.connect(
-        _socketUri,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'ngrok-skip-browser-warning': 'true',
-        },
-      );
-      _socketClosedByClient = false;
-
-      _socketSubscription = _channel!.stream.listen(
-        _handleSocketEvent,
-        onDone: () {
-          AppLogger.warning('WebSocket encerrado pelo servidor');
-          final closedByClient = _socketClosedByClient;
-          _socketClosedByClient = false;
-          _socketSubscription = null;
-          _channel = null;
-          if (closedByClient) {
-            return;
-          }
-          unawaited(_stopTracking(
-            statusMessage: 'Conexão encerrada pelo servidor.',
-            closeSocket: false,
-          ));
-        },
-        onError: (error, stack) {
-          AppLogger.error('Erro no canal WebSocket', error, stack);
-          unawaited(_stopTracking(
-            statusMessage: 'Erro na conexão: $error. Tentando reconectar...',
-            closeSocket: false,
-          ));
-          _attemptReconnect();
-        },
-        cancelOnError: true,
-      );
-
-      // Envia token para autenticação caso o backend exija
-      _channel!.sink.add(jsonEncode({'type': 'auth', 'token': token}));
-
-      // Inicia stream de localização
-      const locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // em metros
-      );
-
-      _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen(
-        (Position position) {
-          _sendLocation(position);
-        },
-        onError: (error) {
-          AppLogger.error('Erro no stream de localização', error);
-          setState(() {
-            _statusMessage = 'Erro ao obter localização: $error';
-          });
-        },
-      );
+      _authToken = token;
+      await _ensurePositionStream();
+      if (!mounted) return;
 
       setState(() {
-        _statusMessage = 'Enviando localização para a plataforma web...';
+        _trackingStatus = _TrackingStatus.connecting;
+        _statusMessage = 'Estabelecendo conexão e preparando o envio...';
       });
 
-      AppLogger.info('Rastreamento iniciado para veículo $_vehicleId');
+      await _initializeSocket(isReconnect: false);
     } catch (e, stack) {
       AppLogger.error('Erro ao iniciar rastreamento', e, stack);
+      if (!mounted) return;
       setState(() {
+        _trackingStatus = _TrackingStatus.error;
         _statusMessage = 'Erro ao iniciar rastreamento: $e';
         _isTracking = false;
+        _userRequestedStop = true;
       });
     }
   }
@@ -299,7 +380,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
     if (payload['message'] == 'connection_closed') {
       AppLogger.warning('Servidor solicitou o encerramento da conexão');
-      unawaited(_stopTracking(statusMessage: 'Conexão encerrada pelo servidor.'));
+      _handleConnectionLoss('Conexão encerrada pelo servidor.');
       return;
     }
 
@@ -307,10 +388,12 @@ class _TrackingScreenState extends State<TrackingScreen> {
     if (success == false && payload['error'] != null) {
       final reason = payload['error'].toString();
       AppLogger.warning('Servidor retornou erro: $reason');
-      unawaited(_stopTracking(
-        statusMessage: 'Erro do servidor: $reason. Tentando reconectar...',
-      ));
-      _attemptReconnect();
+      final fatalAuthIssue = reason.toLowerCase().contains('token');
+      if (fatalAuthIssue) {
+        unawaited(_stopTracking(statusMessage: 'Erro do servidor: $reason'));
+        return;
+      }
+      _handleConnectionLoss('Erro do servidor: $reason.');
     }
   }
 
@@ -335,14 +418,53 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
-  void _attemptReconnect() {
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted || _isTracking) return;
-      _startTracking();
+  void _handleConnectionLoss(String message) {
+    unawaited(_socketSubscription?.cancel());
+    _socketSubscription = null;
+
+    if (_channel != null) {
+      try {
+        _channel?.sink.close();
+      } catch (_) {}
+    }
+    _channel = null;
+
+    if (!_isTracking || _userRequestedStop) {
+      return;
+    }
+
+    if (!mounted) {
+      _scheduleReconnect();
+      return;
+    }
+
+    setState(() {
+      _trackingStatus = _TrackingStatus.reconnecting;
+      _statusMessage = '$message Tentando reconectar...';
+    });
+
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    if (!_isTracking || _userRequestedStop) {
+      return;
+    }
+
+    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+      if (!_isTracking || _userRequestedStop || !mounted) {
+        return;
+      }
+      unawaited(_initializeSocket(isReconnect: true));
     });
   }
 
-  Future<void> _stopTracking({String? statusMessage, bool closeSocket = true}) async {
+  Future<void> _stopTracking({String? statusMessage}) async {
+    _userRequestedStop = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
     try {
       await _positionSubscription?.cancel();
     } catch (_) {}
@@ -353,17 +475,17 @@ class _TrackingScreenState extends State<TrackingScreen> {
     } catch (_) {}
     _socketSubscription = null;
 
-    if (closeSocket) {
-      _socketClosedByClient = true;
-      try {
-        await _channel?.sink.close();
-      } catch (_) {}
-    }
+    try {
+      await _channel?.sink.close();
+    } catch (_) {}
     _channel = null;
+
+    _authToken = null;
 
     if (!mounted) return;
     setState(() {
       _isTracking = false;
+      _trackingStatus = _TrackingStatus.idle;
       _statusMessage = statusMessage ?? 'Envio de localização desativado.';
     });
 
@@ -380,9 +502,29 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonColor = _isTracking ? Colors.red : Colors.green;
-    final buttonText =
-      _isTracking ? 'Parar envio da localização' : 'Começar rastreamento';
+    final buttonColor = switch (_trackingStatus) {
+      _TrackingStatus.streaming => Colors.red,
+      _TrackingStatus.connecting => Colors.orange,
+      _TrackingStatus.reconnecting => Colors.orange,
+      _TrackingStatus.error => _isTracking ? Colors.orange : Colors.redAccent,
+      _ => Colors.green,
+    };
+
+    final buttonText = switch (_trackingStatus) {
+      _TrackingStatus.streaming => 'Parar envio da localização',
+      _TrackingStatus.connecting => 'Conectando... (toque para parar)',
+      _TrackingStatus.reconnecting => 'Tentando reconectar... (toque para parar)',
+      _TrackingStatus.error => _isTracking ? 'Parar rastreamento' : 'Tentar novamente',
+      _ => 'Começar rastreamento',
+    };
+
+    final statusColor = switch (_trackingStatus) {
+      _TrackingStatus.streaming => Colors.green,
+      _TrackingStatus.connecting => Colors.blueGrey,
+      _TrackingStatus.reconnecting => Colors.orange,
+      _TrackingStatus.error => Colors.redAccent,
+      _ => Colors.blueGrey,
+    };
 
     return Scaffold(
       appBar: AppBar(
@@ -485,11 +627,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
-                  color: _isTracking ? Colors.green : Colors.redAccent,
+                  color: statusColor,
                 ),
               ),
               const SizedBox(height: 16),
-              if (_isTracking)
+              if (_trackingStatus == _TrackingStatus.streaming)
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: Text(

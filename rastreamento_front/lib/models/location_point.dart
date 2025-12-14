@@ -29,11 +29,14 @@ class LocationPoint {
     }
 
     DateTime parseDateValue(dynamic value) {
-      if (value is DateTime) return value;
+      if (value is DateTime) return value.toLocal();
       if (value is String) {
-        return DateTime.tryParse(value) ?? DateTime.now();
+        final parsed = DateTime.tryParse(value);
+        if (parsed != null) {
+          return parsed.toLocal();
+        }
       }
-      return DateTime.now();
+      return DateTime.now().toLocal();
     }
 
     return LocationPoint(

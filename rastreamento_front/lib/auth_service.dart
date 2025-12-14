@@ -13,7 +13,7 @@ class AuthService {
 
   static const String _envBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://semianimated-brendon-superimportant.ngrok-free.dev',
+    defaultValue: 'https://urbantrack-back.onrender.com',
   );
 
   final String baseUrl;
