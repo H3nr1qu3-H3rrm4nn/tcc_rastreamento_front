@@ -52,5 +52,8 @@ class LocationPoint {
     );
   }
 
-  String get formattedTimestamp => DateFormat('dd/MM/yyyy HH:mm').format(timestamp.toLocal());
+  String get formattedTimestamp {
+    final adjusted = timestamp.toLocal().subtract(const Duration(hours: 3));
+    return DateFormat('dd/MM/yyyy HH:mm').format(adjusted);
+  }
 }
