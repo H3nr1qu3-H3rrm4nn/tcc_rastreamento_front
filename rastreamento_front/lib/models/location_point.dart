@@ -6,6 +6,7 @@ class LocationPoint {
   final String? status;
   final String? localizacao;
   final DateTime timestamp;
+  final String? rawTimestamp;
 
   LocationPoint({
     required this.vehicleId,
@@ -15,6 +16,7 @@ class LocationPoint {
     this.velocity,
     this.status,
     this.localizacao,
+    this.rawTimestamp,
   });
 
   factory LocationPoint.fromJson(Map<String, dynamic> json) {
@@ -47,8 +49,10 @@ class LocationPoint {
       status: source['status'],
       localizacao: source['localizacao'] ?? source['last_location'],
       timestamp: parseDateValue(source['timestamp']),
+      rawTimestamp: source['timestamp']?.toString(),
     );
   }
 
   DateTime get localTimestamp => timestamp.toLocal();
+  String get displayTimestamp => rawTimestamp ?? localTimestamp.toString();
 }

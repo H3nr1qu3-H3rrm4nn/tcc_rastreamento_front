@@ -40,7 +40,6 @@ dependencies:
   google_maps_flutter: ^2.2.5
   geolocator: ^10.1.0
   web_socket_channel: ^3.0.0  # para comunicação WebSocket [web:196][web:193]
-  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

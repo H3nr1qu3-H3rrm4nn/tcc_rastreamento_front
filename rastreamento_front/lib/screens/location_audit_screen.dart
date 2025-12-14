@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../auth_service.dart';
 import '../models/location_point.dart';
@@ -215,7 +214,7 @@ class _LocationAuditScreenState extends State<LocationAuditScreen> {
         final vehicle = _vehicleById[loc.vehicleId];
         final title = vehicle?.displayName ?? 'Veículo ${loc.vehicleId}';
         final speed = loc.velocity != null ? '${loc.velocity!.toStringAsFixed(1)} km/h' : 'N/A';
-        final formattedTime = DateFormat('dd/MM/yyyy HH:mm').format(loc.localTimestamp);
+        final formattedTime = loc.displayTimestamp;
         return ListTile(
           leading: const Icon(Icons.place_outlined, color: Colors.indigo),
           title: Text(title),
