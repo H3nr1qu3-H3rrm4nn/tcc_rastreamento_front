@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class LocationPoint {
   final int vehicleId;
   final double latitude;
@@ -50,5 +52,5 @@ class LocationPoint {
     );
   }
 
-  String get formattedTimestamp => timestamp.toLocal().toString().split('.').first;
+  String get formattedTimestamp => DateFormat('dd/MM/yyyy HH:mm').format(timestamp.toLocal());
 }
