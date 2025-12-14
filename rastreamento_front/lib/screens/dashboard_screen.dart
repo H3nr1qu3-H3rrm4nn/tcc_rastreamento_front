@@ -14,6 +14,7 @@ import '../widgets/app_bar_custom.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/vehicle_list_item.dart';
 import 'history_screen.dart';
+import 'location_audit_screen.dart';
 import 'user_management_screen.dart';
 import 'vehicles_screen.dart';
 
@@ -322,7 +323,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _onMenuItemSelected(int index) {
-    if (index == 3 && !_isAdmin) {
+    if (index >= 3 && !_isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Aba disponível apenas para administradores.')),
       );
@@ -345,6 +346,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 2:
         return HistoryScreen(userId: _resolvedUserId);
       case 3:
+        return const LocationAuditScreen();
+      case 4:
         return const UserManagementScreen();
       default:
         return _buildDashboard();

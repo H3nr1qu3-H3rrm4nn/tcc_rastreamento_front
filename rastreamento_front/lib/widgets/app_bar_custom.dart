@@ -92,7 +92,8 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
               _buildMenuItem('Dashboard', 0),
               _buildMenuItem('Veículos', 1),
               _buildMenuItem('Histórico', 2),
-              if (isAdmin) _buildMenuItem('Usuários', 3),
+              if (isAdmin) _buildMenuItem('Auditoria', 3),
+              if (isAdmin) _buildMenuItem('Usuários', 4),
 
               const Spacer(),
 
