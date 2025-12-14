@@ -18,12 +18,22 @@ class UserProfile {
         ? json['object'] as Map<String, dynamic>
         : json;
 
+    bool parseIsAdmin(dynamic value) {
+      if (value is bool) return value;
+      if (value is num) return value == 1;
+      if (value is String) {
+        final normalized = value.trim().toLowerCase();
+        return normalized == 'true' || normalized == '1' || normalized == 'admin';
+      }
+      return false;
+    }
+
     return UserProfile(
       id: source['id'] ?? source['user_id'] ?? 0,
       email: source['email'] ?? '',
       name: source['name'],
       imageSrc: source['image_src'],
-      isAdmin: source['is_admin'] ?? false,
+      isAdmin: parseIsAdmin(source['is_admin']),
     );
   }
 
