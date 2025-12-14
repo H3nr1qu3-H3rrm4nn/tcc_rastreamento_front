@@ -215,8 +215,7 @@ class _LocationAuditScreenState extends State<LocationAuditScreen> {
         final vehicle = _vehicleById[loc.vehicleId];
         final title = vehicle?.displayName ?? 'Veículo ${loc.vehicleId}';
         final speed = loc.velocity != null ? '${loc.velocity!.toStringAsFixed(1)} km/h' : 'N/A';
-        final localDisplayTime = loc.localTimestamp.subtract(const Duration(hours: 3));
-        final formattedTime = DateFormat('dd/MM/yyyy HH:mm').format(localDisplayTime);
+        final formattedTime = DateFormat('dd/MM/yyyy HH:mm').format(loc.localTimestamp);
         return ListTile(
           leading: const Icon(Icons.place_outlined, color: Colors.indigo),
           title: Text(title),
