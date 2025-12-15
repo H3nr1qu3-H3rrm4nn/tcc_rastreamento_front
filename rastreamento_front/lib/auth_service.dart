@@ -641,19 +641,26 @@ class AuthService {
         .toList();
   }
 
-  /// Fetch locations for [vehicleId] between [start] and [end].
-  /// Timestamps are sent as ISO-8601 without timezone, e.g. `2025-11-27T00:00:00`.
+  /// Fetch locations for [vehicleId] between [start] and [end]. Timestamps are
+  /// sent no timezone, matching how values are persisted na base (GMT-03).
   Future<List<LocationPoint>> fetchVehicleLocationsInRange(
     int vehicleId,
     DateTime start,
     DateTime end,
   ) async {
     String formatIso(DateTime dt) {
-      // Remove timezone info e milissegundos para bater com `YYYY-MM-DDTHH:MM:SS`.
-      final withoutMs = DateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+      // Ajusta manualmente para GMT-03, já que o backend interpreta dessa forma.
+      final offset = const Duration(hours: 3);
+      final adjusted = dt.subtract(offset);
+      final withoutMs = DateTime(
+        adjusted.year,
+        adjusted.month,
+        adjusted.day,
+        adjusted.hour,
+        adjusted.minute,
+        adjusted.second,
+      );
       final iso = withoutMs.toIso8601String();
-      // `toIso8601String` gera algo como `2025-11-27T00:00:00.000` ou com `Z`.
-      // Mantemos apenas `YYYY-MM-DDTHH:MM:SS`.
       final tIndex = iso.indexOf('T');
       if (tIndex == -1) return iso;
       final timePart = iso.substring(tIndex + 1);
