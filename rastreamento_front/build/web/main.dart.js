@@ -96980,7 +96980,7 @@ for(n=s.length,m=t.uj,l=a,k=0,j=0;j<s.length;s.length===n||(0,A.L)(s),++j){i=s[j
 h=A.fo(i.b,i.c)
 if(l!=null){g=i.r
 f=l.a
-f=Math.abs(A.ev(g.b-l.b,g.a-f).a)>3e8
+f=Math.abs(A.ev(g.b-l.b,g.a-f).a)>6e7
 g=f}else g=!1
 if(g){if(o.length>=2){e=k+1
 p.C(0,new A.fM(new A.l4("segment_"+k),!1,B.b4,!1,B.t3,B.tq,A.hJ(o,!0,m),B.iK,B.iK,!0,4,0,a))

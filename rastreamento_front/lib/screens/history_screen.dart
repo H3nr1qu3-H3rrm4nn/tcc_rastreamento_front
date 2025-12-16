@@ -401,7 +401,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         .map((h) => LatLng(h.latitude, h.longitude))
         .toList(growable: false);
 
-    final gapThreshold = const Duration(minutes: 5);
+    final gapThreshold = const Duration(minutes: 1);
     final segmentPolylines = <Polyline>{};
     var currentSegment = <LatLng>[];
     DateTime? previousTimestamp;
