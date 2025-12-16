@@ -394,19 +394,53 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return;
     }
 
-    final points = _history
+    final orderedHistory = List<LocationPoint>.from(_history)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    final orderedPoints = orderedHistory
         .map((h) => LatLng(h.latitude, h.longitude))
-        .toList();
+        .toList(growable: false);
 
-    final polyline = Polyline(
-      polylineId: const PolylineId('route'),
-      points: points,
-      color: Colors.indigo,
-      width: 4,
-    );
+    final gapThreshold = const Duration(minutes: 5);
+    final segmentPolylines = <Polyline>{};
+    var currentSegment = <LatLng>[];
+    DateTime? previousTimestamp;
+    var segmentIndex = 0;
 
-    final start = points.first;
-    final end = points.last;
+    for (final item in orderedHistory) {
+      final currentPoint = LatLng(item.latitude, item.longitude);
+      if (previousTimestamp != null &&
+          item.timestamp.difference(previousTimestamp).abs() > gapThreshold) {
+        if (currentSegment.length >= 2) {
+          segmentPolylines.add(
+            Polyline(
+              polylineId: PolylineId('segment_${segmentIndex++}'),
+              points: List<LatLng>.from(currentSegment),
+              color: Colors.indigo,
+              width: 4,
+            ),
+          );
+        }
+        currentSegment = <LatLng>[];
+      }
+
+      currentSegment.add(currentPoint);
+      previousTimestamp = item.timestamp;
+    }
+
+    if (currentSegment.length >= 2) {
+      segmentPolylines.add(
+        Polyline(
+          polylineId: PolylineId('segment_${segmentIndex++}'),
+          points: List<LatLng>.from(currentSegment),
+          color: Colors.indigo,
+          width: 4,
+        ),
+      );
+    }
+
+    final start = orderedPoints.first;
+    final end = orderedPoints.last;
 
     final markers = <Marker>{
       Marker(
@@ -424,7 +458,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     };
 
     setState(() {
-      _polylines = {polyline};
+      _polylines = segmentPolylines;
       _markers = markers;
     });
 
@@ -434,7 +468,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void _fitMapToHistory() {
     if (_mapController == null || _history.isEmpty) return;
 
-    final points = _history
+    final orderedPoints = List<LocationPoint>.from(_history)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final points = orderedPoints
         .map((h) => LatLng(h.latitude, h.longitude))
         .toList();
     double south = points.first.latitude;
